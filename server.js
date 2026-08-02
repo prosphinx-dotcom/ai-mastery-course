@@ -1071,15 +1071,89 @@ function serveStub(res) {
   var h=document.getElementById('view-hero'); if(h) h.classList.add('view--active');
 })();
 function showView(v){
-  if(v!=='hero'){var m=document.getElementById('paywall-modal');if(m)m.style.display='flex';return;}
+  var free=['hero','intro'];
+  if(free.indexOf(v)===-1){var m=document.getElementById('paywall-modal');if(m)m.style.display='flex';return;}
   document.querySelectorAll('.view').forEach(function(e){e.classList.remove('view--active');});
-  var h=document.getElementById('view-hero');if(h)h.classList.add('view--active');
+  var el=document.getElementById('view-'+v);if(el){el.classList.add('view--active');window.scrollTo(0,0);}
 }
 function renderDashboard(){}
 function generateCert(){}
 function updateStats(){}
   `);
 }
+
+
+// ── Privacy & Terms ───────────────────────────────────────────
+app.get('/privacy', (req, res) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Privacy Policy — AI Mastery</title>
+<style>body{font-family:-apple-system,sans-serif;max-width:720px;margin:40px auto;padding:0 24px;background:#060a14;color:#c8d0e0;line-height:1.7}h1,h2{color:#fff}a{color:#00d4ff}hr{border-color:#1a2540}</style>
+</head><body>
+<h1>Privacy Policy</h1>
+<p>Last updated: June 2026</p>
+<p>Pro Sphinx ("we", "us") operates the AI Mastery course at ai-mastery-server.onrender.com. This policy explains how we handle your data.</p>
+<h2>Data We Collect</h2>
+<p>We collect your email address and password (hashed) when you register. We store your course progress and XP. Payment is processed by Stripe — we do not store card details.</p>
+<h2>How We Use Your Data</h2>
+<p>Your data is used solely to provide access to the course, track your progress, and send transactional emails if needed. We do not sell or share your data with third parties.</p>
+<h2>Data Storage</h2>
+<p>Data is stored securely on Supabase (PostgreSQL). Passwords are hashed using bcrypt and never stored in plain text.</p>
+<h2>Cookies</h2>
+<p>We use a single session cookie (aim_token) to keep you logged in. No advertising or tracking cookies are used.</p>
+<h2>Your Rights</h2>
+<p>You may request deletion of your account and data at any time by emailing <a href="mailto:pro.sphinx@proton.me">pro.sphinx@proton.me</a>.</p>
+<h2>Contact</h2>
+<p><a href="mailto:pro.sphinx@proton.me">pro.sphinx@proton.me</a></p>
+<p><a href="/">← Back to AI Mastery</a></p>
+</body></html>`);
+});
+
+app.get('/terms', (req, res) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Terms & Conditions — AI Mastery</title>
+<style>body{font-family:-apple-system,sans-serif;max-width:720px;margin:40px auto;padding:0 24px;background:#060a14;color:#c8d0e0;line-height:1.7}h1,h2{color:#fff}a{color:#00d4ff}hr{border-color:#1a2540}</style>
+</head><body>
+<h1>Terms &amp; Conditions</h1>
+<p>Last updated: June 2026</p>
+<p>By purchasing and using the AI Mastery course, you agree to these terms.</p>
+<h2>Access</h2>
+<p>Upon payment of £45, you receive lifetime access to the AI Mastery course for personal, non-commercial use. Access is tied to your registered account.</p>
+<h2>Refunds</h2>
+<p>We offer a full refund within 7 days of purchase if you have completed fewer than 3 lessons. Contact <a href="mailto:pro.sphinx@proton.me">pro.sphinx@proton.me</a> to request a refund.</p>
+<h2>Intellectual Property</h2>
+<p>All course content is owned by Pro Sphinx. You may not reproduce, distribute, or resell any part of the course.</p>
+<h2>Availability</h2>
+<p>We aim to keep the course available at all times but cannot guarantee uninterrupted access. We reserve the right to update course content at any time.</p>
+<h2>Limitation of Liability</h2>
+<p>The course is provided for educational purposes. Pro Sphinx is not liable for any outcomes resulting from applying course content.</p>
+<h2>Governing Law</h2>
+<p>These terms are governed by the laws of England and Wales.</p>
+<h2>Contact</h2>
+<p><a href="mailto:pro.sphinx@proton.me">pro.sphinx@proton.me</a></p>
+<p><a href="/">← Back to AI Mastery</a></p>
+</body></html>`);
+});
+
+
+// ── Digital Asset Links (TWA verification) ───────────────────
+// Uses Google Play App Signing fingerprint (NOT the upload key)
+app.get('/.well-known/assetlinks.json', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.json([{
+    relation: ['delegate_permission/common.handle_all_urls'],
+    target: {
+      namespace: 'android_app',
+      package_name: 'com.aimastery.course',
+      sha256_cert_fingerprints: [
+        '95:B3:F6:49:11:96:E9:1A:A7:EF:C6:05:39:C6:B6:AA:75:C1:3F:A9:5F:23:0E:B7:53:E0:A6:C7:3A:D9:D3:54'
+      ]
+    }
+  }]);
+});
 
 // ── Static files ──────────────────────────────────────────────
 // Serve correct HTML from embedded string (bypasses static file issues)
