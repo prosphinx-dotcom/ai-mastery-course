@@ -93,15 +93,25 @@ individual routes:
   switching (`showView`), dashboard rendering, the lesson reader, quiz grading, streak/XP calculation, and
   certificate generation.
 
-### Progress persistence is currently broken/incomplete
+### Progress persistence
 
-`server.js` exposes `GET/POST /api/progress` (server.js:1008-1045) which read/write Supabase's `progress` and
-`user_stats` tables and compute streak/XP server-side. **`app.js` never calls these endpoints.** Its `saveState()`
-(app.js:535) is a literal no-op with the comment `/* in-memory only inside iframe */`, and `completeLesson()`
-(app.js:841) mutates only the in-memory `state` object. In practice this means: lesson completion, streak, and
-XP are lost on page reload and never reach Supabase, despite the backend being fully wired for it. If asked to
-"fix" or "wire up" progress persistence, this is the gap — `completeLesson()` needs to `fetch('/api/progress', ...)`
-and `initApp()`/dashboard rendering needs to hydrate `state` from `GET /api/progress` instead of starting fresh.
+`server.js` exposes `GET/POST /api/progress`, which read/write Supabase's `progress` and `user_stats` tables and
+compute streak/XP server-side. The frontend wires into this at two points:
+
+- `completeLesson()` (app.js) calls `saveState(day, lesson.xp, computeQuizScore(day))`, which `POST`s to
+  `/api/progress` with the lesson's stated XP reward and the quiz score (% of that lesson's questions answered
+  correctly). The server is authoritative for `xp`/`streak` — it upserts `user_stats` and returns the updated row,
+  and `saveState()` copies it straight into `state.xp`/`state.streak` rather than recomputing locally (avoids
+  client/server drift). If the request fails (e.g. offline), it falls back to a local optimistic bump so the UI
+  doesn't stall.
+- On page load, `initApp()` (in the `index.html` inline script — **and its duplicate inside `server.js`'s
+  `INDEX_HTML` string, see above; both were updated together**) fetches `/api/auth/me` and, if the user has
+  access, also fetches `GET /api/progress` and passes both into `hydrateProgress(stats, progress)` (app.js),
+  which rebuilds `state.completedLessons`/`xp`/`streak`/`currentWeek` from the DB. This is what makes completed
+  lessons, XP, and streak survive a reload/new device instead of resetting every page load.
+
+The `xp` field on `POST /api/progress` is optional — if omitted, the server falls back to its original
+`10 + score` formula, so older callers keep working.
 
 ### Data model (Supabase / Postgres)
 
@@ -110,8 +120,7 @@ tooling):
 
 - `profiles` — id, email, password_hash (bcrypt, cost 12), `has_access` (flipped by the Stripe webhook or manual
   admin action), `stripe_payment_id`
-- `user_stats` — one row per user, xp/streak/last_activity (server-computed in `/api/progress`, currently unused
-  by the frontend — see above)
+- `user_stats` — one row per user, xp/streak/last_activity (server-computed in `/api/progress`, see above)
 - `progress` — per-user per-lesson-day completion rows, unique on `(user_id, lesson_day)`
 
 ### Payment flow

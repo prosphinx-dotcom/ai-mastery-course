@@ -532,8 +532,6 @@ const COURSE = {
 };
 
 // ===== STATE =====
-function saveState() { /* in-memory only inside iframe */ }
-
 let state = {
   completedLessons: [],
   streak: 0,
@@ -544,6 +542,54 @@ let state = {
   quizAnswers: {},
   userName: 'Learner'
 };
+
+// Persist a completed lesson to the server and sync xp/streak from the
+// authoritative response. Falls back to a local bump if the request fails
+// (e.g. offline) so the UI stays usable.
+async function saveState(day, xp, score) {
+  try {
+    const res = await fetch('/api/progress', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ lesson_day: day, completed: true, xp, score })
+    });
+    const data = await res.json();
+    if (res.ok && data.stats) {
+      state.xp = data.stats.xp;
+      state.streak = data.stats.streak;
+      state.lastCompletedDate = data.stats.last_activity;
+      return;
+    }
+  } catch (e) {
+    console.error('Failed to save progress:', e);
+  }
+  state.xp += xp;
+  state.streak = state.streak || 1;
+}
+
+// Load persisted progress/stats (called once on page init for signed-in,
+// paying users) so completed lessons, XP, and streak survive a reload.
+function hydrateProgress(stats, progress) {
+  state.xp = stats?.xp || 0;
+  state.streak = stats?.streak || 0;
+  state.lastCompletedDate = stats?.last_activity || null;
+  state.completedLessons = (progress || [])
+    .filter(p => p.completed)
+    .map(p => p.lesson_day)
+    .sort((a, b) => a - b);
+
+  const nextDay = state.completedLessons.length + 1;
+  const nextWeek = COURSE.weeks.find(w => w.days.includes(nextDay));
+  state.currentWeek = nextWeek ? nextWeek.id : COURSE.weeks[COURSE.weeks.length - 1].id;
+
+  const streakEl = document.getElementById('streakCount');
+  const xpEl = document.getElementById('xpCount');
+  if (streakEl) streakEl.textContent = state.streak;
+  if (xpEl) xpEl.textContent = state.xp;
+
+  if (state.currentView === 'dashboard') renderDashboard();
+}
 
 // ===== VIEW MANAGEMENT =====
 function showView(view) {
@@ -837,30 +883,25 @@ function highlightQuizAnswer(day, qIndex, optIndex) {
     : `❌ Not quite. ${question.explanation}`;
 }
 
+// Percentage of this lesson's quiz questions answered correctly (0 if no quiz/no answers).
+function computeQuizScore(day) {
+  const lesson = COURSE.lessons.find(l => l.day === day);
+  if (!lesson || !lesson.quiz || !lesson.quiz.length) return 0;
+  const answers = state.quizAnswers[day] || {};
+  let correct = 0;
+  lesson.quiz.forEach((q, qi) => {
+    const answeredKey = Object.keys(answers).find(k => k.startsWith(qi + '-'));
+    if (answeredKey && Number(answeredKey.split('-')[1]) === q.correct) correct++;
+  });
+  return Math.round((correct / lesson.quiz.length) * 100);
+}
+
 // ===== COMPLETE LESSON =====
-function completeLesson(day) {
+async function completeLesson(day) {
   if (state.completedLessons.includes(day)) return;
 
   const lesson = COURSE.lessons.find(l => l.day === day);
   state.completedLessons.push(day);
-  state.xp += lesson.xp;
-
-  // Streak logic
-  const today = new Date().toDateString();
-  if (state.lastCompletedDate !== today) {
-    if (state.lastCompletedDate) {
-      const last = new Date(state.lastCompletedDate);
-      const diff = Math.floor((new Date(today) - last) / (1000 * 60 * 60 * 24));
-      state.streak = diff <= 1 ? state.streak + 1 : 1;
-    } else {
-      state.streak = 1;
-    }
-    state.lastCompletedDate = today;
-  }
-
-  // Update nav
-  document.getElementById('streakCount').textContent = state.streak;
-  document.getElementById('xpCount').textContent = state.xp;
 
   // Auto-advance week
   const nextDay = day + 1;
@@ -869,8 +910,12 @@ function completeLesson(day) {
     if (nextWeek) state.currentWeek = nextWeek.id;
   }
 
-  // Persist progress
-  saveState();
+  // Persist progress — this also syncs state.xp/state.streak from the server
+  await saveState(day, lesson.xp, computeQuizScore(day));
+
+  // Update nav
+  document.getElementById('streakCount').textContent = state.streak;
+  document.getElementById('xpCount').textContent = state.xp;
 
   // Show toast
   showToast('🎉', `Lesson ${day} Complete!`, `+${lesson.xp} XP earned`);
