@@ -728,7 +728,13 @@ async function initApp() {
       var data = await res.json();
       currentUser = data.user;
       hasAccess = data.user.has_access;
-      if (data.stats && typeof updateStats === 'function') updateStats(data.stats);
+      if (hasAccess && typeof hydrateProgress === 'function') {
+        try {
+          var progRes = await fetch('/api/progress', { credentials: 'include' });
+          var progress = progRes.ok ? await progRes.json() : [];
+          hydrateProgress(data.stats, progress);
+        } catch(e) {}
+      }
     }
   } catch(e) {}
   updateNavUser();
@@ -1011,7 +1017,7 @@ app.get('/api/progress', requireAuth, async (req, res) => {
 });
 
 app.post('/api/progress', requireAuth, async (req, res) => {
-  const { lesson_day, completed, score } = req.body;
+  const { lesson_day, completed, score, xp } = req.body;
   try {
     const { data, error } = await supabase.from('progress').upsert({
       user_id: req.user.id, lesson_day, completed,
@@ -1021,23 +1027,28 @@ app.post('/api/progress', requireAuth, async (req, res) => {
 
     if (error) throw error;
 
+    let updatedStats = null;
     if (completed) {
       const today = new Date().toISOString().split('T')[0];
       const { data: stats } = await supabase.from('user_stats').select('*')
         .eq('user_id', req.user.id).single();
-      const xpGain = 10 + (score || 0);
+      // `xp` is the lesson's stated reward (sent by the client); fall back to the
+      // old score-based formula if the caller doesn't provide one.
+      const xpGain = typeof xp === 'number' ? xp : 10 + (score || 0);
       const lastActivity = stats?.last_activity;
       const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
       const newStreak = (lastActivity === yesterday || lastActivity === today)
         ? (stats?.streak || 0) + (lastActivity !== today ? 1 : 0) : 1;
-      await supabase.from('user_stats').upsert({
+      const { data: newStatsRow, error: statsError } = await supabase.from('user_stats').upsert({
         user_id: req.user.id,
         xp: (stats?.xp || 0) + xpGain,
         streak: newStreak,
         last_activity: today
-      }, { onConflict: 'user_id' });
+      }, { onConflict: 'user_id' }).select().single();
+      if (statsError) console.error('Stats upsert error:', statsError);
+      else updatedStats = newStatsRow;
     }
-    res.json({ success: true, progress: data });
+    res.json({ success: true, progress: data, stats: updatedStats });
   } catch(e) {
     console.error('Progress error:', e);
     res.status(500).json({ error: 'Failed to save progress' });

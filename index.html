@@ -699,7 +699,13 @@ async function initApp() {
       var data = await res.json();
       currentUser = data.user;
       hasAccess = data.user.has_access;
-      if (data.stats && typeof updateStats === 'function') updateStats(data.stats);
+      if (hasAccess && typeof hydrateProgress === 'function') {
+        try {
+          var progRes = await fetch('/api/progress', { credentials: 'include' });
+          var progress = progRes.ok ? await progRes.json() : [];
+          hydrateProgress(data.stats, progress);
+        } catch(e) {}
+      }
     }
   } catch(e) {}
   updateNavUser();
