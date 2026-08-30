@@ -1180,8 +1180,13 @@ app.get('*', (req, res) => {
 });
 
 // ── Start ─────────────────────────────────────────────────────
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`AI Mastery running on port ${PORT}`);
-  if (missing.length) console.warn('⚠️  Missing:', missing.join(', '));
-  else console.log('✅ All environment variables present');
-});
+// Guarded so `require('./server')` from tests (via supertest) doesn't bind a real port.
+if (require.main === module) {
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`AI Mastery running on port ${PORT}`);
+    if (missing.length) console.warn('⚠️  Missing:', missing.join(', '));
+    else console.log('✅ All environment variables present');
+  });
+}
+
+module.exports = app;
